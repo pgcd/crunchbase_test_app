@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block page_title %}Search results{% endblock %}
+{% block content %}
+    <a href="{% url "crunchbase:search" "companies" %}">Companies</a>
+    <a href="{% url "crunchbase:search" "products" %}">Products</a>
+{% endblock %}
