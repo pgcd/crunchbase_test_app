@@ -1,0 +1,5 @@
+.idea
+.vagrant
+*.pyc
+*.pyo
+local_settings.py
