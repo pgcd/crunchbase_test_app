@@ -1,3 +1,7 @@
-from django.shortcuts import render
+from django.views.generic import ListView
 
-# Create your views here.
+
+class CrunchbaseSearchView(ListView):
+    template_name = 'crunchbase/search_results.html'
+    def get_queryset(self):
+        return []
