@@ -1,8 +1,10 @@
 from django.core import urlresolvers
+from django.core.cache import cache
 from django.test import TestCase
 from requests import Response
 from crunchbase.views import CrunchbaseQuery, CrunchbaseEndpoint
 from django_webtest import WebTest
+import mock
 
 
 class FrontendAccessTest(WebTest):
@@ -75,3 +77,18 @@ class EndpointTest(TestCase):
     def test_crunchquery_list_can_be_limited(self):
         json = self.ep.list()
         self.assertEqual(len(json['items']), 10)
+
+    def test_list_items_are_cached(self):
+        actual_return = self.ep.list(raw=True)
+        with mock.patch('crunchbase.views.requests', autospec=True) as req:
+            cache.clear()
+            req.get.return_value = actual_return
+            self.ep.list()
+            self.assertEqual(req.get.call_count, 1)
+            # If we call it a second time, we expect requests not to be called again
+            self.ep.list()
+            self.assertEqual(req.get.call_count, 1)
+
+    def test_list_items_include_extra_information(self):
+        # We should be able to leverage the previously set cache; in any case, we're going to load only the first 2 items here
+        data = self.ep.list(per_page=2)

@@ -85,6 +85,14 @@ TEMPLATE_DIRS = [
     os.path.join(BASE_DIR, 'templates')
 ]
 
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
+        'TIMEOUT': 3600,  # Reasonably high timeout, since the data is not going to change all that much
+    }
+}
+
 STATIC_URL = '/static/'
 CRUNCHBASE_USER_KEY = 'PLEASE SET IN LOCAL SETTINGS'
 try:

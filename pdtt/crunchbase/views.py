@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.cache import cache
 from django.views.generic import ListView
 import requests
 
@@ -44,14 +45,22 @@ class CrunchbaseEndpoint(object):
     def list(self, per_page=None, raw=False):
         """
 
-        :param per_page: Number of items to return per page (defaults to CrunchBase's own default)
+        :param per_page: Number of items to return per page (defaults to CrunchbaseEndpoint.per_page)
         :param raw: Boolean to indicate if the result should be the actual response or the processed list
 
         The output JSON of a Crunchbase list verb has a {metadata: {}, data: {items: [], paging: {}} structure;
         at the moment we don't care about anything else than the actual items
 
         """
-        response = requests.get(self.uri, params={'user_key': settings.CRUNCHBASE_USER_KEY})
+        cache_key = self.uri  # TODO: This will need to take the page into consideration
+        response = cache.get(cache_key)
+        if response is None:
+            response = requests.get(self.uri, params={'user_key': settings.CRUNCHBASE_USER_KEY})
+            # TODO: I suspect that setting the whole response in cache might cause problems with the cache value size
+            # since the actual response is roughly 200k in size. Still, apparently, in normal use everything gets properly
+            # cached, so...
+            cache.set(cache_key, response)
+
         if raw:  # In this case, we will return the actual output of the GET request, without any processing
             return response
 
