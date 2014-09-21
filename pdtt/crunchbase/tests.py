@@ -1,24 +1,37 @@
 from django.core import urlresolvers
 from django.test import TestCase
 from requests import Response
-from unittest import skip
 from crunchbase.views import CrunchbaseQuery, CrunchbaseEndpoint
+from django_webtest import WebTest
 
 
-class FrontendAccessTest(TestCase):
+class FrontendAccessTest(WebTest):
     def test_a_user_can_search_crunchbase(self):
-        response = self.client.get(urlresolvers.reverse('crunchbase:search'))
+        response = self.app.get(urlresolvers.reverse('crunchbase:search'))
         self.assertEqual(response.status_code, 200)
         # the main page should return a link to the two main querysets
         companies_search_url = urlresolvers.reverse('crunchbase:search', args=('companies',))
-        self.assertContains(response, '<a href="%s">Companies</a>' % companies_search_url)
+        self.assertTrue(response.html.find('a', text='Companies', href=companies_search_url))
         products_search_url = urlresolvers.reverse('crunchbase:search', args=('products',))
-        self.assertContains(response, '<a href="%s">Products</a>' % products_search_url)
+        self.assertTrue(response.html.find('a', text='Products', href=products_search_url))
 
     def test_the_main_search_page_shows_first_ten_results_of_both(self):
-        response = self.client.get(urlresolvers.reverse('crunchbase:search'))
+        response = self.app.get(urlresolvers.reverse('crunchbase:search'))
         self.assertIn('companies_search_results', response.context)
         self.assertEqual(len(response.context['companies_search_results']), 10)
+
+    def test_results_in_main_page_show_description_and_logo(self):
+        # HTML-intensive test, might have to be refactored later
+        response = self.app.get(urlresolvers.reverse('crunchbase:search'))
+        companies_list = response.html.find('table', id="companies-list")
+        self.assertTrue(companies_list)
+        self.assertEqual(len(companies_list.find_all('tr', class_='company-info')), 10)
+        # we're gonna check only the first one
+        company_row_cells = companies_list.find('tr', class_='company-info').find_all('td')
+        self.assertEqual(len(company_row_cells), 3)  # Name, description and logo
+        self.assertEqual(company_row_cells[0].string, response.context['companies_search_results'][0]['name'])
+        # The following requires changing the output to also include description and logo
+        self.assertEqual(company_row_cells[1].string, response.context['companies_search_results'][0]['description'])
 
 
 class ApiQueryTest(TestCase):

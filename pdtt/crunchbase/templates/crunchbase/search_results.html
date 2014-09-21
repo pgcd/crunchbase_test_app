@@ -1,6 +1,21 @@
 {% extends "base.html" %}
 {% block page_title %}Search results{% endblock %}
 {% block content %}
-    <a href="{% url "crunchbase:search" "companies" %}">Companies</a>
+    <table id="companies-list" class="crunchbase-resultset">
+        <caption><a href="{% url "crunchbase:search" "companies" %}">Companies</a></caption>
+        <tr>
+            <th>Name</th>
+            <th>Description</th>
+            <th>Logo</th>
+        </tr>
+        {% for company in companies_search_results %}
+            <tr class="company-info">
+                <td>{{ company.name }}</td>
+                <td>{{ company.description }}</td>
+                <td>{{ company.logo }}</td>
+            </tr>
+        {% endfor %}
+    </table>
+
     <a href="{% url "crunchbase:search" "products" %}">Products</a>
 {% endblock %}
