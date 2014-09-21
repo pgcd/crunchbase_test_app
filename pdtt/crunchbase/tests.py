@@ -1,5 +1,6 @@
 from django.core import urlresolvers
 from django.test import TestCase
+from requests import Response
 from unittest import skip
 from crunchbase.views import CrunchbaseQuery
 
@@ -27,7 +28,7 @@ class ApiQueryTest(TestCase):
         super(ApiQueryTest, self).setUp()
 
     def test_crunchquery_can_list_endpoints(self):
-        endpoints = self.bcq.list_endpoints()
+        endpoints = self.bcq.list_endpoint_uris()
         # I'd like the endpoints to be returned in a dict format: {verbose_name: uri}
         self.assertIsInstance(endpoints, dict)
         # For this project, we only need the Companies and the Products endpoints
@@ -37,8 +38,13 @@ class ApiQueryTest(TestCase):
     def test_all_endpoints_queries_are_aliased_as_attributes(self):
         # In real life, this might possibly lead to shadowing but that's not a concern in our scenario, since we're only
         # going to have companies and products
-        self.assertTrue(all([hasattr(self.bcq, x) for x in self.bcq.list_endpoints()]))
+        self.assertTrue(all([hasattr(self.bcq, x) for x in self.bcq.list_endpoint_uris()]))
 
     def test_crunchquery_can_connect_to_endpoints(self):
         # a true API would require several verbs; initially, though, we need to be able to list stuff.
         response = self.bcq.companies.list()
+        self.assertIsInstance(response, Response)
+        # The two relevant bits here are the status code (for auth) and the response length (for the actual data)
+        self.assertEqual(response.status_code, 200)
+        json = response.json()
+        self.assertGreaterEqual(len(json['data']['items']), 10)  # Min page length from requirements
