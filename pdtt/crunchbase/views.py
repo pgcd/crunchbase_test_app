@@ -35,6 +35,7 @@ class CrunchbaseQuery(object):
 class CrunchbaseEndpoint(object):
     BASE_URI = 'http://api.crunchbase.com'
     uri = ''
+    per_page = 10
 
     def __init__(self, uri):
         super(CrunchbaseEndpoint, self).__init__()
@@ -53,4 +54,9 @@ class CrunchbaseEndpoint(object):
         response = requests.get(self.uri, params={'user_key': settings.CRUNCHBASE_USER_KEY})
         if raw:  # In this case, we will return the actual output of the GET request, without any processing
             return response
-        return response.json()['data']
+
+        data = response.json()['data']
+        per_page = self.per_page if per_page is None else per_page
+        if per_page:
+            data['items'] = data['items'][:per_page]
+        return data

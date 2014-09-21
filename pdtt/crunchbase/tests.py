@@ -60,5 +60,5 @@ class EndpointTest(TestCase):
         self.assertIsInstance(data, dict)
 
     def test_crunchquery_list_can_be_limited(self):
-        json = self.ep.list(per_page=10)
+        json = self.ep.list()
         self.assertEqual(len(json['items']), 10)
