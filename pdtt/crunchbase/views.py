@@ -11,7 +11,7 @@ class CrunchbaseSearchView(ListView):
 
     def get_context_data(self, **kwargs):
         data = super(CrunchbaseSearchView, self).get_context_data(**kwargs)
-        data['companies_search_results'] = None
+        data['companies_search_results'] = CrunchbaseQuery().companies.list().json()['data']['items']
         return data
 
 

@@ -15,7 +15,6 @@ class FrontendAccessTest(TestCase):
         products_search_url = urlresolvers.reverse('crunchbase:search', args=('products',))
         self.assertContains(response, '<a href="%s">Products</a>' % products_search_url)
 
-    @skip("Not currently enabled")
     def test_the_main_search_page_shows_first_ten_results_of_both(self):
         response = self.client.get(urlresolvers.reverse('crunchbase:search'))
         self.assertIn('companies_search_results', response.context)
