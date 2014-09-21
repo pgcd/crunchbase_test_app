@@ -12,12 +12,13 @@ class CrunchbaseSearchView(ListView):
 
     def get_context_data(self, **kwargs):
         data = super(CrunchbaseSearchView, self).get_context_data(**kwargs)
-        data['companies_search_results'] = CrunchbaseQuery().companies.list()['items']
+        companies = CrunchbaseQuery().companies.list()['items']
+        data['companies_search_results'] = companies
         return data
 
 
 class CrunchbaseQuery(object):
-    ENDPOINTS = {'companies': '/v/2/organizations', 'products': '/v/2/products'}
+    ENDPOINTS = {'companies': 'organizations', 'products': 'products'}
 
     def list_endpoint_uris(self):
         """
@@ -34,7 +35,7 @@ class CrunchbaseQuery(object):
 
 
 class CrunchbaseEndpoint(object):
-    BASE_URI = 'http://api.crunchbase.com'
+    BASE_URI = 'http://api.crunchbase.com/v/2/'  # trailing slash, because the paths in the response data are like that
     uri = ''
     per_page = 10
 
@@ -42,9 +43,11 @@ class CrunchbaseEndpoint(object):
         super(CrunchbaseEndpoint, self).__init__()
         self.uri = self.BASE_URI+uri
 
-    def list(self, per_page=None, raw=False):
+    def list(self, per_page=None, raw=False, fetch_values=None):
         """
 
+
+        :param fetch_values: Iterable with the names of the detail values to be fetched here
         :param per_page: Number of items to return per page (defaults to CrunchbaseEndpoint.per_page)
         :param raw: Boolean to indicate if the result should be the actual response or the processed list
 
@@ -68,4 +71,23 @@ class CrunchbaseEndpoint(object):
         per_page = self.per_page if per_page is None else per_page
         if per_page:
             data['items'] = data['items'][:per_page]
+        if fetch_values is not None:
+            for item in data['items']:
+                item.update(dict(zip(fetch_values, fetch_values)))
         return data
+
+    def detail(self, path, raw=False):
+        # This method should probably belong to a different class, or the class should be renamed; still, it's handy to keep it
+        # here for the moment
+        """
+
+        :param path: "Permalink" for the required resource in the form /resource/identifier (eg. /companies/virgil-security)
+        """
+        response = cache.get(path)
+        if response is None:
+            response = requests.get(self.BASE_URI+path, params={'user_key': settings.CRUNCHBASE_USER_KEY})
+            cache.set(path, response)
+
+        if raw:
+            return response
+        return response.json()['data']

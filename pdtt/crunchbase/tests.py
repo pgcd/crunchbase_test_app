@@ -89,6 +89,34 @@ class EndpointTest(TestCase):
             self.ep.list()
             self.assertEqual(req.get.call_count, 1)
 
-    def test_list_items_include_extra_information(self):
+    def test_detail_returns_data(self):
+        # The value should be cached, hopefully - Ideally we would mock this up but...
+        path = self.ep.list(per_page=1)['items'][0]['path']
+        detail_response = self.ep.detail(path, raw=True)
+        self.assertEqual(detail_response.status_code, 200)
+        detail_data = self.ep.detail(path)
+        # At the moment, the only data we're interested in is the description
+        self.assertIn('short_description', detail_data['properties'])
+
+    def test_detail_data_is_cached(self):
+        # It should be "are cached", yes.
+        path = self.ep.list(per_page=1)['items'][0]['path']
+        actual_return = self.ep.detail(path, raw=True)
+        with mock.patch('crunchbase.views.requests', autospec=True) as req:
+            cache.delete(path)
+            req.get.return_value = actual_return
+            self.ep.detail(path)
+            self.assertEqual(req.get.call_count, 1)
+            self.ep.detail(path)
+            self.assertEqual(req.get.call_count, 1)
+
+    def test_list_items_can_include_extra_information(self):
         # We should be able to leverage the previously set cache; in any case, we're going to load only the first 2 items here
         data = self.ep.list(per_page=2)
+        self.assertNotIn('short_description', data['items'][0])
+        # A better solution would be to use something like a queryset, so that we could do list().values('something','etc')
+        # but, given the time constraints we'll go with a dict of extra values
+        data = self.ep.list(per_page=2, fetch_values=('short_description',))
+        self.assertIn('short_description', data['items'][0])
+        # Of course, we expect the actual description to match that in the details page of the item, so:
+        # detail = self.ep.detail(data['items'][0]['path'])
