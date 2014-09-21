@@ -2,7 +2,7 @@ from django.core import urlresolvers
 from django.test import TestCase
 from requests import Response
 from unittest import skip
-from crunchbase.views import CrunchbaseQuery
+from crunchbase.views import CrunchbaseQuery, CrunchbaseEndpoint
 
 
 class FrontendAccessTest(TestCase):
@@ -41,9 +41,24 @@ class ApiQueryTest(TestCase):
 
     def test_crunchquery_can_connect_to_endpoints(self):
         # a true API would require several verbs; initially, though, we need to be able to list stuff.
-        response = self.bcq.companies.list()
+        response = self.bcq.companies.list(raw=True)
         self.assertIsInstance(response, Response)
         # The two relevant bits here are the status code (for auth) and the response length (for the actual data)
         self.assertEqual(response.status_code, 200)
         json = response.json()
         self.assertGreaterEqual(len(json['data']['items']), 10)  # Min page length from requirements
+
+
+class EndpointTest(TestCase):
+    # The actual CrunchBase API does not seem to allow setting a page size, so we're gonna have to work around that
+    # by implementing a sub-pagination in our model, with some related stuff
+    def setUp(self):
+        self.ep = CrunchbaseEndpoint(CrunchbaseQuery.ENDPOINTS['companies'])
+
+    def test_list_returns_data(self):
+        data = self.ep.list()
+        self.assertIsInstance(data, dict)
+
+    def test_crunchquery_list_can_be_limited(self):
+        json = self.ep.list(per_page=10)
+        self.assertEqual(len(json['items']), 10)

@@ -11,13 +11,12 @@ class CrunchbaseSearchView(ListView):
 
     def get_context_data(self, **kwargs):
         data = super(CrunchbaseSearchView, self).get_context_data(**kwargs)
-        data['companies_search_results'] = CrunchbaseQuery().companies.list().json()['data']['items']
+        data['companies_search_results'] = CrunchbaseQuery().companies.list()['items']
         return data
 
 
 class CrunchbaseQuery(object):
     ENDPOINTS = {'companies': '/v/2/organizations', 'products': '/v/2/products'}
-    BASE_URI = 'http://api.crunchbase.com'
 
     def list_endpoint_uris(self):
         """
@@ -29,21 +28,29 @@ class CrunchbaseQuery(object):
 
     def __getattr__(self, item):
         if item in self.ENDPOINTS:
-            return CrunchbaseEndpoint(self.BASE_URI+self.ENDPOINTS[item])
+            return CrunchbaseEndpoint(self.ENDPOINTS[item])
         raise AttributeError
 
 
 class CrunchbaseEndpoint(object):
+    BASE_URI = 'http://api.crunchbase.com'
     uri = ''
 
     def __init__(self, uri):
         super(CrunchbaseEndpoint, self).__init__()
-        self.uri = uri
+        self.uri = self.BASE_URI+uri
 
-    def list(self):
+    def list(self, per_page=None, raw=False):
         """
+
+        :param per_page: Number of items to return per page (defaults to CrunchBase's own default)
+        :param raw: Boolean to indicate if the result should be the actual response or the processed list
+
         The output JSON of a Crunchbase list verb has a {metadata: {}, data: {items: [], paging: {}} structure;
         at the moment we don't care about anything else than the actual items
 
         """
-        return requests.get(self.uri, params={'user_key': settings.CRUNCHBASE_USER_KEY})
+        response = requests.get(self.uri, params={'user_key': settings.CRUNCHBASE_USER_KEY})
+        if raw:  # In this case, we will return the actual output of the GET request, without any processing
+            return response
+        return response.json()['data']
