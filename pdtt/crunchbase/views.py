@@ -44,7 +44,6 @@ class CrunchbaseEndpoint(object):
         """
         The output JSON of a Crunchbase list verb has a {metadata: {}, data: {items: [], paging: {}} structure;
         at the moment we don't care about anything else than the actual items
-        This method returns the actual items returned by a GET on this endpoint.
 
         """
         return requests.get(self.uri, params={'user_key': settings.CRUNCHBASE_USER_KEY})
