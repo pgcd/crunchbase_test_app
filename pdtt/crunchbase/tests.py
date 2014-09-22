@@ -38,6 +38,18 @@ class FrontendAccessTest(WebTest):
                          response.context['companies_search_results'][0]['properties__short_description'])
         self.assertEqual(company_row_cells[2].find('img').attrs['src'],
                          response.context['companies_search_results'][0]['primary_image'])
+        # And now the products
+        products_list = response.html.find('table', id="products-list")
+        self.assertTrue(products_list)
+        self.assertEqual(len(products_list.find_all('tr', class_='product-info')), 10)
+        # Same checks as for the companies
+        product_row_cells = products_list.find('tr', class_='product-info').find_all('td')
+        self.assertEqual(len(product_row_cells), 3)
+        self.assertEqual(product_row_cells[0].string, response.context['products_search_results'][0]['name'])
+        self.assertEqual(product_row_cells[1].string,
+                         response.context['products_search_results'][0]['properties__short_description'])
+        self.assertEqual(product_row_cells[2].find('img').attrs['src'],
+                         response.context['products_search_results'][0]['primary_image'])
 
 
 class ApiQueryTest(TestCase):

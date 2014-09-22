@@ -12,10 +12,25 @@
             <tr class="company-info">
                 <td>{{ company.name }}</td>
                 <td>{{ company.properties__short_description }}</td>
-                <td><img src="{{ company.primary_image }}" alt="{{ company.name }}" /></td>
+                <td><img width="200" src="{{ company.primary_image }}" alt="{{ company.name }}" /></td>
             </tr>
         {% endfor %}
     </table>
 
-    <a href="{% url "crunchbase:search" "products" %}">Products</a>
+    <table id="products-list" class="crunchbase-resultset">
+        <caption><a href="{% url "crunchbase:search" "products" %}">Products</a></caption>
+        <tr>
+            <th>Name</th>
+            <th>Description</th>
+            <th>Logo</th>
+        </tr>
+        {% for product in products_search_results %}
+            <tr class="product-info">
+                <td>{{ product.name }}</td>
+                <td>{{ product.properties__short_description }}</td>
+                <td><img width="200" src="{{ product.primary_image }}" alt="{{ product.name }}" /></td>
+            </tr>
+        {% endfor %}
+    </table>
+
 {% endblock %}

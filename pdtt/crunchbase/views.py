@@ -12,8 +12,10 @@ class CrunchbaseSearchView(ListView):
 
     def get_context_data(self, **kwargs):
         data = super(CrunchbaseSearchView, self).get_context_data(**kwargs)
-        companies = CrunchbaseQuery().companies.list(fetch_values=('properties__short_description','primary_image'))
+        companies = CrunchbaseQuery().companies.list(fetch_values=('properties__short_description', 'primary_image'))
         data['companies_search_results'] = companies['data']['items']
+        products = CrunchbaseQuery().products.list(fetch_values=('properties__short_description', 'primary_image'))
+        data['products_search_results'] = products['data']['items']
         return data
 
 
