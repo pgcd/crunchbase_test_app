@@ -33,7 +33,8 @@ class FrontendAccessTest(WebTest):
         self.assertEqual(len(company_row_cells), 3)  # Name, description and logo
         self.assertEqual(company_row_cells[0].string, response.context['companies_search_results'][0]['name'])
         # The following requires changing the output to also include description and logo
-        self.assertEqual(company_row_cells[1].string, response.context['companies_search_results'][0]['description'])
+        self.assertEqual(company_row_cells[1].string,
+                         response.context['companies_search_results'][0]['properties__short_description'])
 
 
 class ApiQueryTest(TestCase):
@@ -116,7 +117,9 @@ class EndpointTest(TestCase):
         self.assertNotIn('short_description', data['items'][0])
         # A better solution would be to use something like a queryset, so that we could do list().values('something','etc')
         # but, given the time constraints we'll go with a dict of extra values
-        data = self.ep.list(per_page=2, fetch_values=('short_description',))
-        self.assertIn('short_description', data['items'][0])
+        data = self.ep.list(per_page=2, fetch_values=('properties__short_description',))
+        item = data['items'][0]
+        self.assertIn('properties__short_description', item)
         # Of course, we expect the actual description to match that in the details page of the item, so:
-        # detail = self.ep.detail(data['items'][0]['path'])
+        detail = self.ep.detail(item['path'])
+        self.assertEqual(detail['properties']['short_description'], item['properties__short_description'])

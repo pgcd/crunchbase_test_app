@@ -12,7 +12,7 @@ class CrunchbaseSearchView(ListView):
 
     def get_context_data(self, **kwargs):
         data = super(CrunchbaseSearchView, self).get_context_data(**kwargs)
-        companies = CrunchbaseQuery().companies.list()['items']
+        companies = CrunchbaseQuery().companies.list(fetch_values=('properties__short_description',))['items']
         data['companies_search_results'] = companies
         return data
 
@@ -41,7 +41,26 @@ class CrunchbaseEndpoint(object):
 
     def __init__(self, uri):
         super(CrunchbaseEndpoint, self).__init__()
-        self.uri = self.BASE_URI+uri
+        self.uri = self.BASE_URI + uri
+
+    def fetch_item_values(self, path, fetch_values):
+        """
+
+        :param path: item path as exposed in CrunchbaseEndpoint.list result
+        :param fetch_values: iterable
+        :return: :rtype: dict
+        """
+        # The actual method should include ways to parse the keys of the values to be fetched, but we can work with a
+        # a map here
+        values_map = {
+            'properties__short_description': lambda detail: ('properties__short_description',
+                                                             detail['properties']['short_description']),
+        }
+        item_details = self.detail(path)
+        # The default behaviour could change to simply return the key that was passed as fetch_value, rather than raising an
+        # exception, but that would make it harder to test
+        item_values = [values_map.get(v)(item_details) for v in fetch_values]
+        return dict(item_values)
 
     def list(self, per_page=None, raw=False, fetch_values=None):
         """
@@ -73,7 +92,7 @@ class CrunchbaseEndpoint(object):
             data['items'] = data['items'][:per_page]
         if fetch_values is not None:
             for item in data['items']:
-                item.update(dict(zip(fetch_values, fetch_values)))
+                item.update(self.fetch_item_values(item['path'], fetch_values))
         return data
 
     def detail(self, path, raw=False):
@@ -85,7 +104,7 @@ class CrunchbaseEndpoint(object):
         """
         response = cache.get(path)
         if response is None:
-            response = requests.get(self.BASE_URI+path, params={'user_key': settings.CRUNCHBASE_USER_KEY})
+            response = requests.get(self.BASE_URI + path, params={'user_key': settings.CRUNCHBASE_USER_KEY})
             cache.set(path, response)
 
         if raw:

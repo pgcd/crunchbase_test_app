@@ -11,7 +11,7 @@
         {% for company in companies_search_results %}
             <tr class="company-info">
                 <td>{{ company.name }}</td>
-                <td>{{ company.description }}</td>
+                <td>{{ company.properties__short_description }}</td>
                 <td>{{ company.logo }}</td>
             </tr>
         {% endfor %}
