@@ -12,8 +12,8 @@ class CrunchbaseSearchView(ListView):
 
     def get_context_data(self, **kwargs):
         data = super(CrunchbaseSearchView, self).get_context_data(**kwargs)
-        companies = CrunchbaseQuery().companies.list(fetch_values=('properties__short_description',))['items']
-        data['companies_search_results'] = companies
+        companies = CrunchbaseQuery().companies.list(fetch_values=('properties__short_description','primary_image'))
+        data['companies_search_results'] = companies['data']['items']
         return data
 
 
@@ -50,11 +50,23 @@ class CrunchbaseEndpoint(object):
         :param fetch_values: iterable
         :return: :rtype: dict
         """
+        def get_primary_image(detail):
+            # Helper to deal with missing images and image base url
+            try:
+                image_path = detail['data']['relationships']['primary_image']['items'][0]['path']
+            except KeyError:
+                image_path = None
+            else:
+                image_path = detail['metadata']['image_path_prefix'] + image_path
+            return 'primary_image', image_path
+
         # The actual method should include ways to parse the keys of the values to be fetched, but we can work with a
         # a map here
         values_map = {
             'properties__short_description': lambda detail: ('properties__short_description',
-                                                             detail['properties']['short_description']),
+                                                             detail['data']['properties']['short_description']),
+            # In this case, I'm gonna use a shorthand, since the actual key would be unwieldy
+            'primary_image': get_primary_image
         }
         item_details = self.detail(path)
         # The default behaviour could change to simply return the key that was passed as fetch_value, rather than raising an
@@ -86,14 +98,14 @@ class CrunchbaseEndpoint(object):
         if raw:  # In this case, we will return the actual output of the GET request, without any processing
             return response
 
-        data = response.json()['data']
+        response_json = response.json()
         per_page = self.per_page if per_page is None else per_page
         if per_page:
-            data['items'] = data['items'][:per_page]
+            response_json['data']['items'] = response_json['data']['items'][:per_page]
         if fetch_values is not None:
-            for item in data['items']:
+            for item in response_json['data']['items']:
                 item.update(self.fetch_item_values(item['path'], fetch_values))
-        return data
+        return response_json
 
     def detail(self, path, raw=False):
         # This method should probably belong to a different class, or the class should be renamed; still, it's handy to keep it
@@ -109,4 +121,4 @@ class CrunchbaseEndpoint(object):
 
         if raw:
             return response
-        return response.json()['data']
+        return response.json()

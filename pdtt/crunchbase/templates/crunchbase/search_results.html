@@ -12,7 +12,7 @@
             <tr class="company-info">
                 <td>{{ company.name }}</td>
                 <td>{{ company.properties__short_description }}</td>
-                <td>{{ company.logo }}</td>
+                <td><img src="{{ company.primary_image }}" alt="{{ company.name }}" /></td>
             </tr>
         {% endfor %}
     </table>
