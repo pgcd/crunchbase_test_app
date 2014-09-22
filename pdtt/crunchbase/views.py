@@ -7,17 +7,32 @@ import requests
 
 class CrunchbaseSearchView(ListView):
     template_name = 'crunchbase/search_results.html'
+    context_object_name = 'search_results'
+    subset = None
+
+    def __init__(self, **kwargs):
+        super(CrunchbaseSearchView, self).__init__(**kwargs)
+        self.crunchbase = CrunchbaseQuery()
+
+    def dispatch(self, request, *args, **kwargs):
+        self.subset = kwargs.get('subset')
+        return super(CrunchbaseSearchView, self).dispatch(request, *args, **kwargs)
+
+    def get_queryset(self):
+        return getattr(self.crunchbase, self.subset).list()['data']['items']
+
+
+class CrunchbaseHomeSearchView(CrunchbaseSearchView):
+    def get_context_data(self, **kwargs):
+        data = super(CrunchbaseSearchView, self).get_context_data(**kwargs)
+        companies = self.crunchbase.companies.list(fetch_values=('properties__short_description', 'primary_image'))
+        data['companies_search_results'] = companies['data']['items']
+        products = self.crunchbase.products.list(fetch_values=('properties__short_description', 'primary_image'))
+        data['products_search_results'] = products['data']['items']
+        return data
 
     def get_queryset(self):
         return []
-
-    def get_context_data(self, **kwargs):
-        data = super(CrunchbaseSearchView, self).get_context_data(**kwargs)
-        companies = CrunchbaseQuery().companies.list(fetch_values=('properties__short_description', 'primary_image'))
-        data['companies_search_results'] = companies['data']['items']
-        products = CrunchbaseQuery().products.list(fetch_values=('properties__short_description', 'primary_image'))
-        data['products_search_results'] = products['data']['items']
-        return data
 
 
 class CrunchbaseQuery(object):
@@ -144,4 +159,4 @@ class CrunchbaseEndpoint(object):
         # We could check here for different types of errors and deal with them differently
         response_error = response_json['data'].get('error')
         if response_error:
-           raise Http404
+            raise Http404

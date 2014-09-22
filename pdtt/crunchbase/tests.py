@@ -52,6 +52,20 @@ class FrontendAccessTest(WebTest):
         self.assertEqual(product_row_cells[2].find('img').attrs['src'],
                          response.context['products_search_results'][0]['primary_image'])
 
+    def test_type_specific_pages_have_specific_resultset(self):
+        # While the homepage injects the resultset into the context data, the two type-specific pages need to use pagination,
+        # so we're gonna try to leverage at least some of Django's functionality for it
+        response = self.app.get(urlresolvers.reverse('crunchbase:search', args=('companies',)), status=200)
+        # We expect the context data to hold the companies in the object_list key, and that the view does not injects data
+        self.assertNotIn('products_search_results', response.context)
+        self.assertNotIn('companies_search_results', response.context)
+        self.assertEqual(len(response.context['search_results']), 10)
+        self.assertEqual(response.context['search_results'][0]['type'], 'Organization')
+
+        # sanity check: the same url with an unsupported subset should return a 404
+        response = self.app.get(urlresolvers.reverse('crunchbase:search')+'/people', status=404)
+
+
 
 class ApiQueryTest(TestCase):
     def setUp(self):
