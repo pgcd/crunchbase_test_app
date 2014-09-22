@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.core.cache import cache
+from django.http import Http404
 from django.views.generic import ListView
 import requests
 
@@ -52,6 +53,7 @@ class CrunchbaseEndpoint(object):
         :param fetch_values: iterable
         :return: :rtype: dict
         """
+
         def get_primary_image(detail):
             # Helper to deal with missing images and image base url
             try:
@@ -76,10 +78,12 @@ class CrunchbaseEndpoint(object):
         item_values = [values_map.get(v)(item_details) for v in fetch_values]
         return dict(item_values)
 
-    def list(self, per_page=None, raw=False, fetch_values=None):
+    def list(self, per_page=None, page=0, raw=False, fetch_values=None):
         """
 
 
+
+        :param page: 0-based index of the page
         :param fetch_values: Iterable with the names of the detail values to be fetched here
         :param per_page: Number of items to return per page (defaults to CrunchbaseEndpoint.per_page)
         :param raw: Boolean to indicate if the result should be the actual response or the processed list
@@ -88,10 +92,15 @@ class CrunchbaseEndpoint(object):
         at the moment we don't care about anything else than the actual items
 
         """
-        cache_key = self.uri  # TODO: This will need to take the page into consideration
+        per_page = per_page or self.per_page  # Allowing to use CBs page size default doesn't really make sense.
+        crunchbase_page = int((page * per_page) / 1000)  # TODO: Refactor this so that it's not hardcoded
+        # We're gonna work on the crunchbase page, so our index needs to be adjusted
+        page_index = (page * per_page) - (1000 * crunchbase_page)
+
+        cache_key = "%s-%s" % (crunchbase_page, self.uri)
         response = cache.get(cache_key)
         if response is None:
-            response = requests.get(self.uri, params={'user_key': settings.CRUNCHBASE_USER_KEY})
+            response = requests.get(self.uri, params={'user_key': settings.CRUNCHBASE_USER_KEY, 'page': crunchbase_page + 1})
             # TODO: I suspect that setting the whole response in cache might cause problems with the cache value size
             # since the actual response is roughly 200k in size. Still, apparently, in normal use everything gets properly
             # cached, so...
@@ -101,9 +110,11 @@ class CrunchbaseEndpoint(object):
             return response
 
         response_json = response.json()
-        per_page = self.per_page if per_page is None else per_page
-        if per_page:
-            response_json['data']['items'] = response_json['data']['items'][:per_page]
+        # Annoyingly, CB API returns a 200 Ok status even for errors, so we have to dig into the result set and raise accordingly
+        self.handle_errors(response_json)
+        response_json['data']['items'] = response_json['data']['items'][page_index:page_index + per_page]
+        # Instead of updating the original current_page value, we're adding a new one to allow further processing
+        response_json['data']['paging'].update({'per_page': per_page, 'page': page})
         if fetch_values is not None:
             for item in response_json['data']['items']:
                 item.update(self.fetch_item_values(item['path'], fetch_values))
@@ -124,3 +135,13 @@ class CrunchbaseEndpoint(object):
         if raw:
             return response
         return response.json()
+
+    def handle_errors(self, response_json):
+        """
+        :param response_json:
+        :raise Http404:
+        """
+        # We could check here for different types of errors and deal with them differently
+        response_error = response_json['data'].get('error')
+        if response_error:
+           raise Http404

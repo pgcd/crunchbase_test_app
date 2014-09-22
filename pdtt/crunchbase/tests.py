@@ -1,5 +1,6 @@
 from django.core import urlresolvers
 from django.core.cache import cache
+from django.http import Http404
 from django.test import TestCase
 from requests import Response
 from unittest import skip
@@ -191,6 +192,25 @@ class EndpointTest(TestCase):
     def test_crunchquery_list_can_be_limited(self):
         json = self.ep.list(per_page=10)['data']
         self.assertEqual(len(json['items']), 10)
+
+    def test_crunchquery_list_can_be_paginated(self):
+        # Since the default page size is 10, we're getting the results for two pages here
+        full_list = self.ep.list(per_page=20)
+        self.assertEqual(full_list['data']['paging']['per_page'], 20)
+        self.assertEqual(full_list['data']['paging']['page'], 0)
+        second_page = self.ep.list(page=1)  # page is 0-based, so this is the second page
+        self.assertSequenceEqual(second_page['data']['items'], full_list['data']['items'][10:])
+        self.assertEqual(second_page['data']['paging']['per_page'], 10)
+        self.assertEqual(second_page['data']['paging']['page'], 1)
+
+    def test_crunchquery_list_retrieves_new_pages_when_required(self):
+        # If the page number * per_page is more than what a CB page returns, we should try to get the proper one
+        far_page = self.ep.list(page=101)  # Second page of CB
+        self.assertEqual(len(far_page['data']['items']), 10)  # For now I'll settle for checking the metadata, rather than the val
+        self.assertEqual(far_page['data']['paging']['per_page'], 10)
+        self.assertEqual(far_page['data']['paging']['page'], 101)
+        # If we try to fetch a non-existing page, we should raise a 404
+        self.assertRaises(Http404, lambda: self.ep.list(page=100000, per_page=100000))
 
     @skip("To avoid clearing the cache during the tests")
     def test_list_items_are_cached(self):
