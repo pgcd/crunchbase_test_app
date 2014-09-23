@@ -1,10 +1,11 @@
+from django.conf import settings
 from django.core import urlresolvers
 from django.core.cache import cache
 from django.http import Http404
 from django.test import TestCase
 from requests import Response
 from unittest import skip
-from crunchbase.views import CrunchbaseQuery, CrunchbaseEndpoint
+from crunchbase.views import CrunchbaseQuery, CrunchbaseEndpoint, CrunchbaseQueryset
 from django_webtest import WebTest
 import mock
 
@@ -64,7 +65,7 @@ class FrontendAccessTest(WebTest):
         self.assertEqual(response.context['search_results'][0]['type'], 'Organization')
 
         # sanity check: the same url with an unsupported subset should return a 404
-        self.app.get(urlresolvers.reverse('crunchbase:search')+'/people', status=404)
+        self.app.get(urlresolvers.reverse('crunchbase:search') + '/people', status=404)
 
     def test_type_specific_results_can_be_paginated(self):
         response = self.app.get(urlresolvers.reverse('crunchbase:search', args=('companies',)), status=200)
@@ -112,109 +113,113 @@ class ApiQueryTest(TestCase):
         self.assertGreaterEqual(len(json['data']['items']), 10)  # Min page length from requirements
 
 
-class EndpointTest(TestCase):
+class CBSampleDataMixin(object):
+    sample_detail_data = {
+        'metadata': {
+            'api_path_prefix': u'http://api.crunchbase.com/v/2/',
+            'image_path_prefix': u'http://images.crunchbase.com/',
+            'version': 2,
+            'www_path_prefix': u'http://www.crunchbase.com/'},
+        'data': {
+            'properties': {'closed_on': None,
+                           'closed_on_day': None,
+                           'closed_on_month': None,
+                           'closed_on_trust_code': 0,
+                           'closed_on_year': None,
+                           'created_at': 1411368793,
+                           'description': 'Each issue features a brief tip or tutorial, followed by a '
+                                          'weekly round-up of various apps, scripts, plugins, '
+                                          'and other resources to help front-end developers solve '
+                                          'problems and be more productive.\n',
+                           'homepage_url': 'http://webtoolsweekly.com/',
+                           'is_closed': False,
+                           'name': 'Web Tools Weekly',
+                           'num_employees_max': None,
+                           'num_employees_min': None,
+                           'num_employees_range': None,
+                           'number_of_investments': 0,
+                           'permalink': 'web-tools-weekly',
+                           'primary_role': 'company',
+                           'role_company': True,
+                           'secondary_role_for_profit': True,
+                           'short_description': 'A weekly newsletter for front-end developers and web '
+                                                'designers.',
+                           'total_funding_usd': 0,
+                           'updated_at': 1411369054},
+            'relationships': {
+                'categories': {'items': [{'created_at': 1397980727,
+                                          'name': 'Web Development',
+                                          'path': 'category/web '
+                                                  'development/292d82c553819717827f3122ee792e71',
+                                          'type': 'Category',
+                                          'updated_at': 1411368852,
+                                          'uuid': '292d82c553819717827f3122ee792e71'}],
+                               'paging': {
+                                   'first_page_url': 'http://api.crunchbase.com/v/2/organization/web-tools-weekly/categories',
+                                   'sort_order': 'created_at DESC',
+                                   'total_items': 1}},
+                'images': {'items': [{'created_at': 1411369054,
+                                      'path': 'image/upload/v1411369051/al2ub9nvgqtqjru4ncvl.png',
+                                      'title': None,
+                                      'type': 'ImageAsset',
+                                      'updated_at': 1411369054}],
+                           'paging': {
+                               'first_page_url': 'http://api.crunchbase.com/v/2/organization/web-tools-weekly/images',
+                               'sort_order': 'created_at DESC',
+                               'total_items': 1}},
+                'primary_image': {'items': [{'created_at': 1411368794,
+                                             'path': 'image/upload/v1411368785/k6fnzdjqhambbqsaxp2y.jpg',
+                                             'title': None,
+                                             'type': 'ImageAsset',
+                                             'updated_at': 1411368794}],
+                                  'paging': {
+                                      'first_page_url':
+                                          'http://api.crunchbase.com/v/2/organization/web-tools-weekly/primary_image',
+                                      'sort_order': 'created_at DESC',
+                                      'total_items': 1}},
+                'websites': {'items': [{'created_at': 1411368827,
+                                        'title': 'twitter',
+                                        'type': 'WebPresence',
+                                        'updated_at': 1411368828,
+                                        'url': 'https://twitter.com/WebToolsWeekly'},
+                                       {'created_at': 1411368794,
+                                        'title': 'homepage',
+                                        'type': 'WebPresence',
+                                        'updated_at': 1411368794,
+                                        'url': 'http://webtoolsweekly.com/'}],
+                             'paging': {
+                                 'first_page_url': 'http://api.crunchbase.com/v/2/organization/web-tools-weekly/websites',
+                                 'sort_order': 'created_at DESC',
+                                 'total_items': 2}}},
+            'type': 'Organization',
+            'uuid': 'edcf9d3fafe5de0fd10181f6a8a9b7f6'}
+    }
+    sample_list_data = {
+        'items': [{'created_at': 1411368793,
+                   'name': 'Web Tools Weekly',
+                   'path': 'organization/web-tools-weekly',
+                   'type': 'Organization',
+                   'updated_at': 1411369054},
+                  {'created_at': 1411368747,
+                   'name': 'Corpora',
+                   'path': 'organization/corpora',
+                   'type': 'Organization',
+                   'updated_at': 1411368824}],
+        'paging': {'current_page': 1,
+                   'items_per_page': 1000,
+                   'next_page_url': 'http://api.crunchbase.com/v/2/organizations?page=2',
+                   'number_of_pages': 287,
+                   'prev_page_url': None,
+                   'sort_order': 'created_at DESC',
+                   'total_items': 286559}}
+    sample_list_json = {'metadata': {}, 'data': sample_list_data}
+
+
+class EndpointTest(TestCase, CBSampleDataMixin):
     # The actual CrunchBase API does not seem to allow setting a page size, so we're gonna have to work around that
     # by implementing a sub-pagination in our model, with some related stuff
     def setUp(self):
         self.ep = CrunchbaseEndpoint(CrunchbaseQuery.ENDPOINTS['companies'])
-        self.sample_list_data = {
-            'items': [{'created_at': 1411368793,
-                       'name': 'Web Tools Weekly',
-                       'path': 'organization/web-tools-weekly',
-                       'type': 'Organization',
-                       'updated_at': 1411369054},
-                      {'created_at': 1411368747,
-                       'name': 'Corpora',
-                       'path': 'organization/corpora',
-                       'type': 'Organization',
-                       'updated_at': 1411368824}],
-            'paging': {'current_page': 1,
-                       'items_per_page': 1000,
-                       'next_page_url': 'http://api.crunchbase.com/v/2/organizations?page=2',
-                       'number_of_pages': 287,
-                       'prev_page_url': None,
-                       'sort_order': 'created_at DESC',
-                       'total_items': 286559}}
-        self.sample_detail_data = {
-            'metadata': {
-                'api_path_prefix': u'http://api.crunchbase.com/v/2/',
-                'image_path_prefix': u'http://images.crunchbase.com/',
-                'version': 2,
-                'www_path_prefix': u'http://www.crunchbase.com/'},
-            'data': {
-                'properties': {'closed_on': None,
-                               'closed_on_day': None,
-                               'closed_on_month': None,
-                               'closed_on_trust_code': 0,
-                               'closed_on_year': None,
-                               'created_at': 1411368793,
-                               'description': 'Each issue features a brief tip or tutorial, followed by a '
-                                              'weekly round-up of various apps, scripts, plugins, '
-                                              'and other resources to help front-end developers solve '
-                                              'problems and be more productive.\n',
-                               'homepage_url': 'http://webtoolsweekly.com/',
-                               'is_closed': False,
-                               'name': 'Web Tools Weekly',
-                               'num_employees_max': None,
-                               'num_employees_min': None,
-                               'num_employees_range': None,
-                               'number_of_investments': 0,
-                               'permalink': 'web-tools-weekly',
-                               'primary_role': 'company',
-                               'role_company': True,
-                               'secondary_role_for_profit': True,
-                               'short_description': 'A weekly newsletter for front-end developers and web '
-                                                    'designers.',
-                               'total_funding_usd': 0,
-                               'updated_at': 1411369054},
-                'relationships': {
-                    'categories': {'items': [{'created_at': 1397980727,
-                                              'name': 'Web Development',
-                                              'path': 'category/web '
-                                                      'development/292d82c553819717827f3122ee792e71',
-                                              'type': 'Category',
-                                              'updated_at': 1411368852,
-                                              'uuid': '292d82c553819717827f3122ee792e71'}],
-                                   'paging': {
-                                       'first_page_url': 'http://api.crunchbase.com/v/2/organization/web-tools-weekly/categories',
-                                       'sort_order': 'created_at DESC',
-                                       'total_items': 1}},
-                    'images': {'items': [{'created_at': 1411369054,
-                                          'path': 'image/upload/v1411369051/al2ub9nvgqtqjru4ncvl.png',
-                                          'title': None,
-                                          'type': 'ImageAsset',
-                                          'updated_at': 1411369054}],
-                               'paging': {
-                                   'first_page_url': 'http://api.crunchbase.com/v/2/organization/web-tools-weekly/images',
-                                   'sort_order': 'created_at DESC',
-                                   'total_items': 1}},
-                    'primary_image': {'items': [{'created_at': 1411368794,
-                                                 'path': 'image/upload/v1411368785/k6fnzdjqhambbqsaxp2y.jpg',
-                                                 'title': None,
-                                                 'type': 'ImageAsset',
-                                                 'updated_at': 1411368794}],
-                                      'paging': {
-                                          'first_page_url':
-                                              'http://api.crunchbase.com/v/2/organization/web-tools-weekly/primary_image',
-                                          'sort_order': 'created_at DESC',
-                                          'total_items': 1}},
-                    'websites': {'items': [{'created_at': 1411368827,
-                                            'title': 'twitter',
-                                            'type': 'WebPresence',
-                                            'updated_at': 1411368828,
-                                            'url': 'https://twitter.com/WebToolsWeekly'},
-                                           {'created_at': 1411368794,
-                                            'title': 'homepage',
-                                            'type': 'WebPresence',
-                                            'updated_at': 1411368794,
-                                            'url': 'http://webtoolsweekly.com/'}],
-                                 'paging': {
-                                     'first_page_url': 'http://api.crunchbase.com/v/2/organization/web-tools-weekly/websites',
-                                     'sort_order': 'created_at DESC',
-                                     'total_items': 2}}},
-                'type': 'Organization',
-                'uuid': 'edcf9d3fafe5de0fd10181f6a8a9b7f6'}
-        }
 
     def test_list_returns_data(self):
         data = self.ep.list()
@@ -296,3 +301,50 @@ class EndpointTest(TestCase):
             self.sample_detail_data['metadata']['image_path_prefix'] +
             self.sample_detail_data['data']['relationships']['primary_image']['items'][0]['path'],
             fetched_values['primary_image'])
+
+    def test_list_data_can_be_sliced(self):
+        self.assertTrue(hasattr(self.ep, 'datastore'))
+        # The idea is that the datastore will allow to retrieve all the metadata and that it will work basically as a queryset
+        # for Django purposes;
+        # This means that it must have some sort of meta attribute to store all the metadata from the queries (single and list)
+        # and that it must support slicing, length and item retrieval.
+        self.assertIsInstance(self.ep.datastore, CrunchbaseQueryset)
+        # To make thing
+
+
+class CBQuerysetTest(TestCase, CBSampleDataMixin):
+    def setUp(self):
+        self.cbqs = CrunchbaseQueryset(self.sample_list_json)
+
+    def test_length_is_the_total_number_of_items_from_cb_api(self):
+        self.assertTrue(len(self.cbqs))
+        self.assertEqual(len(self.cbqs), int(self.sample_list_data['paging']['total_items']))
+
+    def test_items_can_be_retrieved_when_in_current_list(self):
+        self.assertEqual(self.cbqs[0]['path'], self.sample_list_data['items'][0]['path'])
+
+    def test_data_is_fetched_from_cb_on_evaluate(self):
+        # we're going with a lazy implementation - only when length or items are requested we're going to get stuff
+        with mock.patch('crunchbase.views.requests', autospec=True) as req:
+            resp = mock.Mock()
+            resp.json.return_value = self.sample_list_json
+            req.get.return_value = resp
+            qs = CrunchbaseQueryset(dataset_uri=CrunchbaseQuery.ENDPOINTS['companies'])
+            self.assertEqual(req.get.call_count, 0)
+            len(qs)
+            self.assertEqual(req.get.call_count, 1)
+            item = qs[0]
+            self.assertEqual(req.get.call_count, 1)
+
+    def test_data_is_fetched_when_not_present_in_current_page(self):
+        qs = CrunchbaseQueryset(dataset=self.sample_list_json, dataset_uri=CrunchbaseQuery.ENDPOINTS['companies'])
+        with mock.patch('crunchbase.views.requests', autospec=True) as req:
+            self.assertEqual(req.get.call_count, 0)
+            len(qs)
+            self.assertEqual(req.get.call_count, 0)  # The dataset is already present so no need to call
+            item = qs[0]
+            self.assertEqual(req.get.call_count, 0)  # As above
+            # Now, we're going to try to fetch an item with an index greater than the available items, so
+            item = qs[1001]
+            req.get.assert_called_once_with('organizations', params={'user_key': settings.CRUNCHBASE_USER_KEY,
+                                                                     'page': 2})

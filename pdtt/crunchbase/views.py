@@ -1,3 +1,4 @@
+import collections
 from django.conf import settings
 from django.core.cache import cache
 from django.core.paginator import Paginator
@@ -42,11 +43,13 @@ class CrunchbaseSearchView(ListView):
         self.cb_page_data = subset_list['data']['paging']
         return subset_list['data']['items']
 
-    # def paginate_queryset(self, queryset, page_size):
-    #     paginator, page, page.object_list, is_paginated = super(CrunchbaseSearchView, self).paginate_queryset(queryset, page_size)
-    #     # Since subset.list() returns a page-sized object, Django wouldn't activate the pagination (because the list is the same
-    #     # size as the page). To force it to consider it paginable, we must return True as is_paginated.
-    #     return paginator, page, page.object_list, True
+        # def paginate_queryset(self, queryset, page_size):
+        # paginator, page, page.object_list, is_paginated = super(CrunchbaseSearchView, self).paginate_queryset(queryset,
+        # page_size)
+        # # Since subset.list() returns a page-sized object, Django wouldn't activate the pagination (because the list is
+        # the same
+        #     # size as the page). To force it to consider it paginable, we must return True as is_paginated.
+        #     return paginator, page, page.object_list, True
 
 
 class CrunchbaseHomeSearchView(CrunchbaseSearchView):
@@ -79,6 +82,34 @@ class CrunchbaseQuery(object):
         raise AttributeError
 
 
+class CrunchbaseQueryset(collections.Sequence):
+    total_items = None
+
+    def __init__(self, dataset=None, dataset_uri=None):
+        assert dataset or dataset_uri, "Either dataset_uri or dataset must be defined"  # dataset should only be used for testing
+        self._dataset = dataset
+        self._dataset_uri = dataset_uri
+
+    def get_dataset(self, **kwargs):
+        kwargs.update({'user_key': settings.CRUNCHBASE_USER_KEY})
+        self._dataset = requests.get(self._dataset_uri, params=kwargs).json()
+
+    @property
+    def dataset(self):
+        if not self._dataset:
+            self.get_dataset()
+        return self._dataset
+
+    def __getitem__(self, index):
+        expected_page = int(ceil(index / self.dataset['data']['paging']['items_per_page'])) + 1
+        if expected_page != self.dataset['data']['paging']['current_page']:
+            self.get_dataset(page=expected_page)
+        return self.dataset['data']['items'][index]
+
+    def __len__(self):
+        return self.dataset['data']['paging']['total_items']
+
+
 class CrunchbaseEndpoint(object):
     BASE_URI = 'http://api.crunchbase.com/v/2/'  # trailing slash, because the paths in the response data are like that
     uri = ''
@@ -87,6 +118,7 @@ class CrunchbaseEndpoint(object):
     def __init__(self, uri):
         super(CrunchbaseEndpoint, self).__init__()
         self.uri = self.BASE_URI + uri
+        self.datastore = CrunchbaseQueryset()
 
     def fetch_item_values(self, path, fetch_values):
         """
