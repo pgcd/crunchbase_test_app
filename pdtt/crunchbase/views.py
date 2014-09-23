@@ -1,8 +1,18 @@
 from django.conf import settings
 from django.core.cache import cache
+from django.core.paginator import Paginator
 from django.http import Http404
 from django.views.generic import ListView
+from math import ceil
 import requests
+
+
+class CrunchbasePaginator(Paginator):
+    def __init__(self, object_list, per_page, orphans=0, allow_empty_first_page=True, **kwargs):
+        # We need to override this to set the correct number of 1000-items pages
+        super(CrunchbasePaginator, self).__init__(object_list, per_page, orphans, allow_empty_first_page)
+        self._count = kwargs.pop('actual_objects_count')
+        self._num_pages = int(ceil(self._count / per_page))
 
 
 class CrunchbaseSearchView(ListView):
@@ -10,16 +20,33 @@ class CrunchbaseSearchView(ListView):
     context_object_name = 'search_results'
     subset = None
 
+    def get_paginator(self, queryset, per_page, orphans=0, allow_empty_first_page=True, **kwargs):
+        kwargs['actual_objects_count'] = self.cb_page_data.get('items_per_page', 0) * self.cb_page_data.get('number_of_pages', 0)
+        return CrunchbasePaginator(queryset, per_page, orphans, allow_empty_first_page, **kwargs)
+
+    def get_paginate_by(self, queryset):
+        return self.subset.per_page
+
     def __init__(self, **kwargs):
         super(CrunchbaseSearchView, self).__init__(**kwargs)
         self.crunchbase = CrunchbaseQuery()
+        self.cb_page_data = {}  # CrunchBase original pagination data
 
     def dispatch(self, request, *args, **kwargs):
-        self.subset = kwargs.get('subset')
+        if kwargs.get('subset'):
+            self.subset = getattr(self.crunchbase, kwargs['subset'])
         return super(CrunchbaseSearchView, self).dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
-        return getattr(self.crunchbase, self.subset).list()['data']['items']
+        subset_list = self.subset.list()
+        self.cb_page_data = subset_list['data']['paging']
+        return subset_list['data']['items']
+
+    # def paginate_queryset(self, queryset, page_size):
+    #     paginator, page, page.object_list, is_paginated = super(CrunchbaseSearchView, self).paginate_queryset(queryset, page_size)
+    #     # Since subset.list() returns a page-sized object, Django wouldn't activate the pagination (because the list is the same
+    #     # size as the page). To force it to consider it paginable, we must return True as is_paginated.
+    #     return paginator, page, page.object_list, True
 
 
 class CrunchbaseHomeSearchView(CrunchbaseSearchView):
@@ -95,8 +122,6 @@ class CrunchbaseEndpoint(object):
 
     def list(self, per_page=None, page=0, raw=False, fetch_values=None):
         """
-
-
 
         :param page: 0-based index of the page
         :param fetch_values: Iterable with the names of the detail values to be fetched here

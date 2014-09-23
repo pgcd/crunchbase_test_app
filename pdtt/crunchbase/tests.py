@@ -56,6 +56,7 @@ class FrontendAccessTest(WebTest):
         # While the homepage injects the resultset into the context data, the two type-specific pages need to use pagination,
         # so we're gonna try to leverage at least some of Django's functionality for it
         response = self.app.get(urlresolvers.reverse('crunchbase:search', args=('companies',)), status=200)
+
         # We expect the context data to hold the companies in the object_list key, and that the view does not injects data
         self.assertNotIn('products_search_results', response.context)
         self.assertNotIn('companies_search_results', response.context)
@@ -63,8 +64,24 @@ class FrontendAccessTest(WebTest):
         self.assertEqual(response.context['search_results'][0]['type'], 'Organization')
 
         # sanity check: the same url with an unsupported subset should return a 404
-        response = self.app.get(urlresolvers.reverse('crunchbase:search')+'/people', status=404)
+        self.app.get(urlresolvers.reverse('crunchbase:search')+'/people', status=404)
 
+    def test_type_specific_results_can_be_paginated(self):
+        response = self.app.get(urlresolvers.reverse('crunchbase:search', args=('companies',)), status=200)
+        self.assertTrue(response.context['is_paginated'])
+        # In this case, we expect to be able to paginate forwards, not back - and this is where we're forced to implement
+        # our own paginator class
+        self.assertTrue(response.context['page_obj'].has_next())
+        page_1_content = response.context['object_list']
+        # if we retrieve the next page, it should have a different set of objects
+        nxt = response.context['page_obj'].next_page_number()
+        response = self.app.get(urlresolvers.reverse('crunchbase:search', args=('companies',)), params={'page': nxt}, status=200)
+        page_2_content = response.context['object_list']
+        # We should probably test for null-intersection, actually, but I guess it's ok to just see that it's not the same page
+        self.assertNotEqual(page_1_content[0]['path'], page_2_content[0]['path'])
+        # And this is where we need to refactor Endpoint.list() completely to turn it into something that resembles a queryset,
+        # at least enough to slice. Alternatively, we could dispense with Django pagination altogether and simply change the
+        # result set based on the page
 
 
 class ApiQueryTest(TestCase):
