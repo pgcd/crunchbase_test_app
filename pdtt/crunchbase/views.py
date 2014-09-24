@@ -92,19 +92,30 @@ class CrunchbaseQueryset(collections.Sequence):
 
     def get_dataset(self, **kwargs):
         kwargs.update({'user_key': settings.CRUNCHBASE_USER_KEY})
-        self._dataset = requests.get(self._dataset_uri, params=kwargs).json()
+        cache_key = "%s-%s" % (kwargs.get('page', 1), self._dataset_uri)
+        response = cache.get(cache_key)
+        if response is None:
+            response = requests.get(self._dataset_uri, params=kwargs)
+            # TODO: I suspect that setting the whole response in cache might cause problems with the cache value size
+            # since the actual response is roughly 200k in size. Still, apparently, in normal use everything gets properly
+            # cached, so...
+            cache.set(cache_key, response)
+
+        self._dataset = response.json()
 
     @property
     def dataset(self):
-        if not self._dataset:
+        if not self._dataset:  # We initialize the dataset with the first page
             self.get_dataset()
         return self._dataset
 
     def __getitem__(self, index):
-        expected_page = int(ceil(index / self.dataset['data']['paging']['items_per_page'])) + 1
+        per_page = self.dataset['data']['paging']['items_per_page']
+        expected_page = int(ceil(index / per_page)) + 1
         if expected_page != self.dataset['data']['paging']['current_page']:
             self.get_dataset(page=expected_page)
-        return self.dataset['data']['items'][index]
+        adjusted_index = index - (expected_page - 1) * per_page
+        return self.dataset['data']['items'][adjusted_index]
 
     def __len__(self):
         return self.dataset['data']['paging']['total_items']

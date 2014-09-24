@@ -4,6 +4,7 @@ from django.core.cache import cache
 from django.http import Http404
 from django.test import TestCase
 from requests import Response
+import requests
 from unittest import skip
 from crunchbase.views import CrunchbaseQuery, CrunchbaseEndpoint, CrunchbaseQueryset
 from django_webtest import WebTest
@@ -315,6 +316,7 @@ class EndpointTest(TestCase, CBSampleDataMixin):
 class CBQuerysetTest(TestCase, CBSampleDataMixin):
     def setUp(self):
         self.cbqs = CrunchbaseQueryset(self.sample_list_json)
+        self.dataset_uri = CrunchbaseEndpoint.BASE_URI + 'organizations'
 
     def test_length_is_the_total_number_of_items_from_cb_api(self):
         self.assertTrue(len(self.cbqs))
@@ -326,25 +328,64 @@ class CBQuerysetTest(TestCase, CBSampleDataMixin):
     def test_data_is_fetched_from_cb_on_evaluate(self):
         # we're going with a lazy implementation - only when length or items are requested we're going to get stuff
         with mock.patch('crunchbase.views.requests', autospec=True) as req:
+            # To avoid picklingerrors, we're going to mock the cache too
+            with mock.patch('crunchbase.views.cache', cache=mock.Mock()) as c:
+                c.get = mock.Mock(return_value=None)
+                resp = mock.Mock()
+                resp.json.return_value = self.sample_list_json
+                req.get.return_value = resp
+                qs = CrunchbaseQueryset(dataset_uri=self.dataset_uri)
+                self.assertEqual(req.get.call_count, 0)
+                len(qs)
+                self.assertEqual(req.get.call_count, 1)
+                item = qs[0]
+                self.assertEqual(req.get.call_count, 1)
+
+    def test_data_is_fetched_when_not_present_in_current_page(self):
+        qs = CrunchbaseQueryset(dataset=self.sample_list_json, dataset_uri=self.dataset_uri)
+        with mock.patch('crunchbase.views.requests', autospec=True) as req:
+            with mock.patch('crunchbase.views.cache', cache=mock.Mock()) as c:
+                c.get = mock.Mock(return_value=None)
+                self.assertEqual(req.get.call_count, 0)
+                len(qs)
+                self.assertEqual(req.get.call_count, 0)  # The dataset is already present so no need to call
+                item = qs[0]
+                self.assertEqual(req.get.call_count, 0)  # As above
+                # Now, we're going to try to fetch an item with an index greater than the available items, so
+                item = qs[1001]
+                req.get.assert_called_once_with(self.dataset_uri, params={'user_key': settings.CRUNCHBASE_USER_KEY,
+                                                                          'page': 2})
+
+    def test_items_from_following_pages_are_fetched_correctly(self):
+        qs = CrunchbaseQueryset(dataset=self.sample_list_json, dataset_uri=self.dataset_uri)
+        with mock.patch('crunchbase.views.requests', autospec=True) as req:
             resp = mock.Mock()
             resp.json.return_value = self.sample_list_json
             req.get.return_value = resp
-            qs = CrunchbaseQueryset(dataset_uri=CrunchbaseQuery.ENDPOINTS['companies'])
-            self.assertEqual(req.get.call_count, 0)
-            len(qs)
-            self.assertEqual(req.get.call_count, 1)
             item = qs[0]
-            self.assertEqual(req.get.call_count, 1)
-
-    def test_data_is_fetched_when_not_present_in_current_page(self):
-        qs = CrunchbaseQueryset(dataset=self.sample_list_json, dataset_uri=CrunchbaseQuery.ENDPOINTS['companies'])
-        with mock.patch('crunchbase.views.requests', autospec=True) as req:
-            self.assertEqual(req.get.call_count, 0)
-            len(qs)
-            self.assertEqual(req.get.call_count, 0)  # The dataset is already present so no need to call
-            item = qs[0]
-            self.assertEqual(req.get.call_count, 0)  # As above
             # Now, we're going to try to fetch an item with an index greater than the available items, so
+            new_page_json = self.sample_list_json.copy()
+            new_page_json['data']['paging']['current_page'] = 2
+            resp.json.return_value = new_page_json
             item = qs[1001]
-            req.get.assert_called_once_with('organizations', params={'user_key': settings.CRUNCHBASE_USER_KEY,
-                                                                     'page': 2})
+
+    def test_dataset_is_cached(self):
+        page1 = requests.get(self.dataset_uri, params={'user_key': settings.CRUNCHBASE_USER_KEY})
+        page2 = requests.get(self.dataset_uri, params={'user_key': settings.CRUNCHBASE_USER_KEY, 'page': 2})
+        qs = CrunchbaseQueryset(dataset_uri=self.dataset_uri)
+        with mock.patch('crunchbase.views.requests', autospec=True) as req:
+            cache.clear()
+            req.get.return_value = page1
+            item = qs[0]
+            self.assertEqual(req.get.call_count, 1)
+            # When retrieving from the second page, we have to make another GET
+            req.get.return_value = page2
+            item = qs[1002]
+            self.assertEqual(req.get.call_count, 2)
+            # Now, if we go back to page 1, we should not have to request again - it should be cached
+            req.get.return_value = page1  # This should not be called anyway
+            item = qs[1]
+            self.assertEqual(req.get.call_count, 2)
+            # Going back to page 2...
+            item = qs[1005]
+            self.assertEqual(req.get.call_count, 2)
