@@ -20,13 +20,11 @@ class CrunchbaseSearchView(ListView):
     template_name = 'crunchbase/search_results.html'
     context_object_name = 'search_results'
     subset = None
+    paginate_by = 10
 
     def get_paginator(self, queryset, per_page, orphans=0, allow_empty_first_page=True, **kwargs):
         kwargs['actual_objects_count'] = self.cb_page_data.get('items_per_page', 0) * self.cb_page_data.get('number_of_pages', 0)
         return CrunchbasePaginator(queryset, per_page, orphans, allow_empty_first_page, **kwargs)
-
-    def get_paginate_by(self, queryset):
-        return self.subset.per_page
 
     def __init__(self, **kwargs):
         super(CrunchbaseSearchView, self).__init__(**kwargs)
@@ -39,16 +37,16 @@ class CrunchbaseSearchView(ListView):
         return super(CrunchbaseSearchView, self).dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
-        subset_list = self.subset.list()
-        self.cb_page_data = subset_list['data']['paging']
-        return subset_list['data']['items']
+        subset_list = self.subset.datastore
+        self.cb_page_data = subset_list.paging
+        return subset_list
 
         # def paginate_queryset(self, queryset, page_size):
         # paginator, page, page.object_list, is_paginated = super(CrunchbaseSearchView, self).paginate_queryset(queryset,
         # page_size)
         # # Since subset.list() returns a page-sized object, Django wouldn't activate the pagination (because the list is
         # the same
-        #     # size as the page). To force it to consider it paginable, we must return True as is_paginated.
+        # # size as the page). To force it to consider it paginable, we must return True as is_paginated.
         #     return paginator, page, page.object_list, True
 
 
@@ -100,25 +98,52 @@ class CrunchbaseQueryset(collections.Sequence):
             # since the actual response is roughly 200k in size. Still, apparently, in normal use everything gets properly
             # cached, so...
             cache.set(cache_key, response)
-
-        self._dataset = response.json()
+        return response.json()
 
     @property
     def dataset(self):
         if not self._dataset:  # We initialize the dataset with the first page
-            self.get_dataset()
+            self._dataset = self.get_dataset()
         return self._dataset
 
+    @property
+    def paging(self):
+        return self.dataset['data']['paging']
+
+    @property
+    def metadata(self):
+        return self.dataset['metadata']
+
     def __getitem__(self, index):
-        per_page = self.dataset['data']['paging']['items_per_page']
-        expected_page = int(ceil(index / per_page)) + 1
-        if expected_page != self.dataset['data']['paging']['current_page']:
-            self.get_dataset(page=expected_page)
-        adjusted_index = index - (expected_page - 1) * per_page
+        per_page = self.paging['items_per_page']
+        if isinstance(index, slice):
+            # TODO: Consider the multiple page scenario (eg. [500:1500]
+            start, stop, step = index.indices(self.paging['total_items'])
+            expected_start_page = int(ceil(start / per_page)) + 1
+            expected_end_page = int(ceil(stop / per_page)) + 1
+            if expected_start_page != self.paging['current_page']:
+                self._dataset = self.get_dataset(page=expected_start_page)
+            if expected_end_page > expected_start_page:
+                raise IndexError("Slicing across pages is not allowed")
+                # self.extend_dataset(expected_start_page, expected_end_page)
+            adjustment = (expected_start_page - 1) * per_page
+            adjusted_index = slice(start - adjustment, stop - adjustment, None)
+        else:
+            expected_start_page = int(ceil(index / per_page)) + 1
+            if expected_start_page != self.paging['current_page']:
+                self.get_dataset(page=expected_start_page)
+            adjusted_index = index - (expected_start_page - 1) * per_page
         return self.dataset['data']['items'][adjusted_index]
 
     def __len__(self):
-        return self.dataset['data']['paging']['total_items']
+        return self.paging['total_items']
+
+    def extend_dataset(self, start_page, end_page):
+        # This seems to work but I just can't bring myself to actually trust it, so I guess I'm gonna raise an exception instead
+        fetched_pages = int(len(self.dataset['data']['items']) / self.paging['items_per_page'])
+        for i in range(start_page + fetched_pages, end_page + 1):  # end_page is inclusive
+            ds = self.get_dataset(page=i)
+            self._dataset['data']['items'].extend(ds['data']['items'])
 
 
 class CrunchbaseEndpoint(object):
@@ -129,7 +154,7 @@ class CrunchbaseEndpoint(object):
     def __init__(self, uri):
         super(CrunchbaseEndpoint, self).__init__()
         self.uri = self.BASE_URI + uri
-        self.datastore = CrunchbaseQueryset()
+        self.datastore = CrunchbaseQueryset(dataset_uri=self.uri)
 
     def fetch_item_values(self, path, fetch_values):
         """

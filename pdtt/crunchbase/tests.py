@@ -314,9 +314,19 @@ class EndpointTest(TestCase, CBSampleDataMixin):
 
 
 class CBQuerysetTest(TestCase, CBSampleDataMixin):
-    def setUp(self):
-        self.cbqs = CrunchbaseQueryset(self.sample_list_json)
-        self.dataset_uri = CrunchbaseEndpoint.BASE_URI + 'organizations'
+    @classmethod
+    def setUpClass(cls):
+        super(CBQuerysetTest, cls).setUpClass()
+        cls.cbqs = CrunchbaseQueryset(cls.sample_list_json)
+        cls.dataset_uri = CrunchbaseEndpoint.BASE_URI + 'organizations'
+        cls.page1 = cache.get('test_page1')
+        if cls.page1 is None:
+            cls.page1 = requests.get(cls.dataset_uri, params={'user_key': settings.CRUNCHBASE_USER_KEY})
+            cache.set('test_page1', cls.page1, timeout=None)
+        cls.page2 = cache.get('test_page2')
+        if cls.page2 is None:
+            cls.page2 = requests.get(cls.dataset_uri, params={'user_key': settings.CRUNCHBASE_USER_KEY, 'page': 2})
+            cache.set('test_page2', cls.page2, timeout=None)
 
     def test_length_is_the_total_number_of_items_from_cb_api(self):
         self.assertTrue(len(self.cbqs))
@@ -370,22 +380,54 @@ class CBQuerysetTest(TestCase, CBSampleDataMixin):
             item = qs[1001]
 
     def test_dataset_is_cached(self):
-        page1 = requests.get(self.dataset_uri, params={'user_key': settings.CRUNCHBASE_USER_KEY})
-        page2 = requests.get(self.dataset_uri, params={'user_key': settings.CRUNCHBASE_USER_KEY, 'page': 2})
         qs = CrunchbaseQueryset(dataset_uri=self.dataset_uri)
         with mock.patch('crunchbase.views.requests', autospec=True) as req:
-            cache.clear()
-            req.get.return_value = page1
-            item = qs[0]
-            self.assertEqual(req.get.call_count, 1)
-            # When retrieving from the second page, we have to make another GET
-            req.get.return_value = page2
-            item = qs[1002]
-            self.assertEqual(req.get.call_count, 2)
-            # Now, if we go back to page 1, we should not have to request again - it should be cached
-            req.get.return_value = page1  # This should not be called anyway
+            with mock.patch('crunchbase.views.cache', cache=mock.Mock()) as c:
+                c.get = mock.Mock(return_value=None)
+                c.set = mock.Mock(side_effect=lambda *args, **kwargs: cache.set(*args, **kwargs))
+                req.get.return_value = self.page1
+                item = qs[0]
+                self.assertEqual(req.get.call_count, 1)
+                # When retrieving from the second page, we have to make another GET
+                req.get.return_value = self.page2
+                item = qs[1002]
+                self.assertEqual(req.get.call_count, 2)
+
+            # Now, if we go back to page 1, we should not have to request again - it should be cached (we didn't mock set())
+            req.get.return_value = self.page1  # This should not be called anyway
             item = qs[1]
             self.assertEqual(req.get.call_count, 2)
             # Going back to page 2...
             item = qs[1005]
             self.assertEqual(req.get.call_count, 2)
+
+    def test_dataset_contains_paging_and_metadata_as_properties(self):
+        qs = CrunchbaseQueryset(dataset_uri=self.dataset_uri)
+        with mock.patch('crunchbase.views.requests', autospec=True) as req:
+            with mock.patch('crunchbase.views.cache', cache=mock.Mock()) as c:
+                c.get = mock.Mock(return_value=None)
+                c.set = mock.Mock(side_effect=lambda *args, **kwargs: cache.set(*args, **kwargs))
+                req.get.return_value = self.page1
+                self.assertEqual(req.get.call_count, 0)
+                self.assertDictEqual(qs.paging, self.page1.json()['data']['paging'])
+                self.assertEqual(req.get.call_count, 1)
+                self.assertDictEqual(qs.metadata, self.page1.json()['metadata'])
+                self.assertEqual(req.get.call_count, 1)  # We really expect the cache to work here
+
+    def test_dataset_can_be_sliced(self):
+        def pick_page(*args, **kwargs):
+            if 'page' in kwargs:
+                if kwargs['page'] == 2:
+                    return self.page2
+                print "requesting page", kwargs['page']
+                return requests.get(self.dataset_uri, params={'user_key': settings.CRUNCHBASE_USER_KEY, 'page': kwargs['page']})
+            return self.page1
+        qs = CrunchbaseQueryset(dataset_uri=self.dataset_uri)
+        with mock.patch('crunchbase.views.requests', autospec=True) as req:
+            req.get = mock.Mock(side_effect=pick_page)
+            self.assertEqual(len(qs[:50]), 50)
+            self.assertEqual(len(qs[100:200]), 100)
+            self.assertEqual(len(qs[1050:1100]), 50)  # second page
+            # I have decided that slicing across pages should not be permitted - I think I have a working solution but
+            # the test output doesn't smell good to me, so I'll just go with an exception instead
+            self.assertRaises(IndexError, lambda: len(qs[:2500]))
