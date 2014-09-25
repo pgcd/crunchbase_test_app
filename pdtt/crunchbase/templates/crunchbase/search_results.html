@@ -1,36 +1,8 @@
 {% extends "base.html" %}
 {% block page_title %}Search results{% endblock %}
 {% block content %}
-    <table id="companies-list" class="crunchbase-resultset">
-        <caption><a href="{% url "crunchbase:search" "companies" %}">Companies</a></caption>
-        <tr>
-            <th>Name</th>
-            <th>Description</th>
-            <th>Logo</th>
-        </tr>
-        {% for company in companies_search_results %}
-            <tr class="company-info">
-                <td>{{ company.name }}</td>
-                <td>{{ company.properties__short_description }}</td>
-                <td><img width="200" src="{{ company.primary_image }}" alt="{{ company.name }}" /></td>
-            </tr>
-        {% endfor %}
-    </table>
-
-    <table id="products-list" class="crunchbase-resultset">
-        <caption><a href="{% url "crunchbase:search" "products" %}">Products</a></caption>
-        <tr>
-            <th>Name</th>
-            <th>Description</th>
-            <th>Logo</th>
-        </tr>
-        {% for product in products_search_results %}
-            <tr class="product-info">
-                <td>{{ product.name }}</td>
-                <td>{{ product.properties__short_description }}</td>
-                <td><img width="200" src="{{ product.primary_image }}" alt="{{ product.name }}" /></td>
-            </tr>
-        {% endfor %}
-    </table>
-
+    {% include "crunchbase/snippets/search_results_table.html" %}
+    {% if page_obj.has_previous %}<a href="{% url "crunchbase:search" subset_name %}?page={{ page_obj.previous_page_number }}">prev</a>{% endif %}
+    Page {{ page_obj.number }} of {{ paginator.num_pages }} ({{ paginator.count }} total objects)
+    {% if page_obj.has_next %}<a href="{% url "crunchbase:search" subset_name %}?page={{ page_obj.next_page_number }}">next</a>{% endif %}
 {% endblock %}

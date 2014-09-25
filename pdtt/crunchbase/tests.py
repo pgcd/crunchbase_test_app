@@ -26,6 +26,15 @@ class FrontendAccessTest(WebTest):
         self.assertIn('companies_search_results', response.context)
         self.assertEqual(len(response.context['companies_search_results']), 10)
 
+    def test_the_main_search_page_allows_searching_within_subsets(self):
+        response = self.app.get(urlresolvers.reverse('crunchbase:search'))
+        self.assertTrue(response.forms['form-companies'])
+        # most basic approach - if we enter the name of one of the results in the form we should find it in the results
+        company = response.context['companies_search_results'][0]
+        response.forms['form-companies']['query'] = company['name']
+        response = response.forms['form-companies'].submit()
+        self.assertIn(company, response.context['object_list'])
+
     def test_results_in_main_page_show_description_and_logo(self):
         # HTML-intensive test, might have to be refactored later
         response = self.app.get(urlresolvers.reverse('crunchbase:search'))
@@ -81,9 +90,11 @@ class FrontendAccessTest(WebTest):
         page_2_content = response.context['object_list']
         # We should probably test for null-intersection, actually, but I guess it's ok to just see that it's not the same page
         self.assertNotEqual(page_1_content[0]['path'], page_2_content[0]['path'])
-        # And this is where we need to refactor Endpoint.list() completely to turn it into something that resembles a queryset,
-        # at least enough to slice. Alternatively, we could dispense with Django pagination altogether and simply change the
-        # result set based on the page
+        # the pages should also have actual HTML to change page
+        response = response.click("prev")
+        self.assertItemsEqual(page_1_content, response.context['object_list'])
+        response = response.click("next")
+        self.assertItemsEqual(page_2_content, response.context['object_list'])
 
 
 class ApiQueryTest(TestCase):
@@ -431,3 +442,12 @@ class CBQuerysetTest(TestCase, CBSampleDataMixin):
             # I have decided that slicing across pages should not be permitted - I think I have a working solution but
             # the test output doesn't smell good to me, so I'll just go with an exception instead
             self.assertRaises(IndexError, lambda: len(qs[:2500]))
+
+    def test_dataset_can_be_searched(self):
+        qs = CrunchbaseQueryset(dataset_uri=self.dataset_uri)
+        # We're gonna try to search the first item, and we expect to get a list with that item
+        item = self.sample_list_data['items'][0]
+        results = qs.search(item['name'])
+        self.assertGreaterEqual(len(results), 1)
+        print results[0]
+        self.assertIn(item['name'], [x['name'] for x in results])

@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block page_title %}Home page{% endblock %}
+{% block content %}
+    {% with search_results=companies_search_results subset_name='companies' %}
+        {% include "crunchbase/snippets/search_results_table.html" %}
+    {% endwith %}
+    {% with search_results=products_search_results subset_name='products' %}
+        {% include "crunchbase/snippets/search_results_table.html" %}
+    {% endwith %}
+{% endblock %}

@@ -2,10 +2,13 @@ import collections
 from django.conf import settings
 from django.core.cache import cache
 from django.core.paginator import Paginator
-from django.http import Http404
+from django.http import Http404, QueryDict
+from django.utils.encoding import smart_unicode
+from django.utils.text import slugify
 from django.views.generic import ListView
 from math import ceil
 import requests
+import urlparse
 
 
 class CrunchbasePaginator(Paginator):
@@ -19,6 +22,7 @@ class CrunchbasePaginator(Paginator):
 class CrunchbaseSearchView(ListView):
     template_name = 'crunchbase/search_results.html'
     context_object_name = 'search_results'
+    subset_name = ''
     subset = None
     paginate_by = 10
 
@@ -33,7 +37,8 @@ class CrunchbaseSearchView(ListView):
 
     def dispatch(self, request, *args, **kwargs):
         if kwargs.get('subset'):
-            self.subset = getattr(self.crunchbase, kwargs['subset'])
+            self.subset_name = kwargs['subset']
+            self.subset = getattr(self.crunchbase, self.subset_name)
         return super(CrunchbaseSearchView, self).dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
@@ -41,16 +46,15 @@ class CrunchbaseSearchView(ListView):
         self.cb_page_data = subset_list.paging
         return subset_list
 
-        # def paginate_queryset(self, queryset, page_size):
-        # paginator, page, page.object_list, is_paginated = super(CrunchbaseSearchView, self).paginate_queryset(queryset,
-        # page_size)
-        # # Since subset.list() returns a page-sized object, Django wouldn't activate the pagination (because the list is
-        # the same
-        # # size as the page). To force it to consider it paginable, we must return True as is_paginated.
-        #     return paginator, page, page.object_list, True
+    def get_context_data(self, **kwargs):
+        data = super(CrunchbaseSearchView, self).get_context_data(**kwargs)
+        data['subset_name'] = self.subset_name
+        return data
 
 
 class CrunchbaseHomeSearchView(CrunchbaseSearchView):
+    template_name = 'crunchbase/home.html'
+
     def get_context_data(self, **kwargs):
         data = super(CrunchbaseSearchView, self).get_context_data(**kwargs)
         companies = self.crunchbase.companies.list(fetch_values=('properties__short_description', 'primary_image'))
@@ -83,14 +87,16 @@ class CrunchbaseQuery(object):
 class CrunchbaseQueryset(collections.Sequence):
     total_items = None
 
-    def __init__(self, dataset=None, dataset_uri=None):
+    def __init__(self, dataset=None, dataset_uri=None, allow_search=True):
         assert dataset or dataset_uri, "Either dataset_uri or dataset must be defined"  # dataset should only be used for testing
         self._dataset = dataset
         self._dataset_uri = dataset_uri
+        self.allow_search = allow_search
 
-    def get_dataset(self, **kwargs):
+    def get_dataset(self, cache_prefix='', **kwargs):
         kwargs.update({'user_key': settings.CRUNCHBASE_USER_KEY})
-        cache_key = "%s-%s" % (kwargs.get('page', 1), self._dataset_uri)
+        cache_prefix = '-'.join([cache_prefix, str(kwargs.get('page', 1))])
+        cache_key = "%s-%s" % (cache_prefix, self._dataset_uri)
         response = cache.get(cache_key)
         if response is None:
             response = requests.get(self._dataset_uri, params=kwargs)
@@ -144,6 +150,16 @@ class CrunchbaseQueryset(collections.Sequence):
         for i in range(start_page + fetched_pages, end_page + 1):  # end_page is inclusive
             ds = self.get_dataset(page=i)
             self._dataset['data']['items'].extend(ds['data']['items'])
+
+    def search(self, term):
+        # CB does not allow queries on Products database, only on Companies, so we must deal with them differently
+        if self.allow_search:
+            scheme, netloc, path, params, query, fragment = urlparse.urlparse(self._dataset_uri)
+            qdict = QueryDict(query).copy()
+            qdict['query'] = term
+            query = qdict.urlencode()
+            return CrunchbaseQueryset(dataset_uri=urlparse.urlunparse((scheme, netloc, path, params, query, fragment)))
+        return self
 
 
 class CrunchbaseEndpoint(object):
