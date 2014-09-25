@@ -40,9 +40,9 @@ class FrontendAccessTest(WebTest):
         response = self.app.get(urlresolvers.reverse('crunchbase:search'))
         companies_list = response.html.find('table', id="companies-list")
         self.assertTrue(companies_list)
-        self.assertEqual(len(companies_list.find_all('tr', class_='company-info')), 10)
+        self.assertEqual(len(companies_list.find_all('tr', class_='companies-info')), 10)
         # we're gonna check only the first one
-        company_row_cells = companies_list.find('tr', class_='company-info').find_all('td')
+        company_row_cells = companies_list.find('tr', class_='companies-info').find_all('td')
         self.assertEqual(len(company_row_cells), 3)  # Name, description and logo
         self.assertEqual(company_row_cells[0].string, response.context['companies_search_results'][0]['name'])
         # The following requires changing the output to also include description and logo
@@ -53,9 +53,9 @@ class FrontendAccessTest(WebTest):
         # And now the products
         products_list = response.html.find('table', id="products-list")
         self.assertTrue(products_list)
-        self.assertEqual(len(products_list.find_all('tr', class_='product-info')), 10)
+        self.assertEqual(len(products_list.find_all('tr', class_='products-info')), 10)
         # Same checks as for the companies
-        product_row_cells = products_list.find('tr', class_='product-info').find_all('td')
+        product_row_cells = products_list.find('tr', class_='products-info').find_all('td')
         self.assertEqual(len(product_row_cells), 3)
         self.assertEqual(product_row_cells[0].string, response.context['products_search_results'][0]['name'])
         self.assertEqual(product_row_cells[1].string,
@@ -451,3 +451,11 @@ class CBQuerysetTest(TestCase, CBSampleDataMixin):
         self.assertGreaterEqual(len(results), 1)
         print results[0]
         self.assertIn(item['name'], [x['name'] for x in results])
+
+    def test_dataset_items_search_detail_for_extra_information(self):
+        qs = CrunchbaseQueryset(dataset_uri=self.dataset_uri)
+        item = qs[0]
+        self.assertTrue(item['properties__short_description'])
+        # We're gonna start by matching exactly the requirements we used for the original list() implementation
+        detail = CrunchbaseEndpoint(CrunchbaseQuery.ENDPOINTS['companies']).detail(item['path'])
+        self.assertEqual(detail['data']['properties']['short_description'], item['properties__short_description'])

@@ -11,7 +11,7 @@
         <th>Logo</th>
     </tr>
     {% for obj in search_results %}
-        <tr class="company-info">
+        <tr class="{{subset_name}}-info">
             <td>{{ obj.name }}</td>
             <td>{{ obj.properties__short_description }}</td>
             <td><img width="200" src="{{ obj.primary_image }}" alt="{{ obj.name }}" /></td>

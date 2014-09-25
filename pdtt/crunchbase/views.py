@@ -1,3 +1,4 @@
+from UserDict import UserDict
 import collections
 from django.conf import settings
 from django.core.cache import cache
@@ -42,13 +43,17 @@ class CrunchbaseSearchView(ListView):
         return super(CrunchbaseSearchView, self).dispatch(request, *args, **kwargs)
 
     def get_queryset(self):
-        subset_list = self.subset.datastore
+        if self.request.GET.get('query'):  # Present and not empty
+            subset_list = self.subset.datastore.search(self.request.GET['query'])
+        else:
+            subset_list = self.subset.datastore
         self.cb_page_data = subset_list.paging
         return subset_list
 
     def get_context_data(self, **kwargs):
         data = super(CrunchbaseSearchView, self).get_context_data(**kwargs)
         data['subset_name'] = self.subset_name
+        data['query'] = self.request.GET.get('query', '')
         return data
 
 
@@ -82,6 +87,23 @@ class CrunchbaseQuery(object):
         if item in self.ENDPOINTS:
             return CrunchbaseEndpoint(self.ENDPOINTS[item])
         raise AttributeError
+
+
+class CrunchbaseProxyObject(UserDict):
+    def __init__(self, dict=None, base_queryset=None, **kwargs):
+        """
+
+        :param dict:
+        :param base_queryset: CrunchbaseQueryset
+        :param kwargs:
+        """
+        self.base_queryset = base_queryset
+        UserDict.__init__(self, dict, **kwargs)
+
+    def __missing__(self, key):
+        value = self.base_queryset.fetch_value(key, self)
+        self[key] = value
+        return value
 
 
 class CrunchbaseQueryset(collections.Sequence):
@@ -139,7 +161,10 @@ class CrunchbaseQueryset(collections.Sequence):
             if expected_start_page != self.paging['current_page']:
                 self.get_dataset(page=expected_start_page)
             adjusted_index = index - (expected_start_page - 1) * per_page
-        return self.dataset['data']['items'][adjusted_index]
+        items = self.dataset['data']['items'][adjusted_index]
+        if isinstance(adjusted_index, slice):
+            return [CrunchbaseProxyObject(i, self) for i in items]
+        return CrunchbaseProxyObject(items, self)
 
     def __len__(self):
         return self.paging['total_items']
@@ -160,6 +185,47 @@ class CrunchbaseQueryset(collections.Sequence):
             query = qdict.urlencode()
             return CrunchbaseQueryset(dataset_uri=urlparse.urlunparse((scheme, netloc, path, params, query, fragment)))
         return self
+
+    def fetch_value(self, key, item):
+        """
+
+        :param key: the key that requires fetching
+        :param item: the dictionary where the key was not found
+        """
+
+        def get_primary_image(detail):
+            # Helper to deal with missing images and image base url
+            try:
+                image_path = detail['data']['relationships']['primary_image']['items'][0]['path']
+            except KeyError:
+                image_path = None
+            else:
+                image_path = detail['metadata']['image_path_prefix'] + image_path
+            return image_path
+
+        # The actual method should include ways to parse the keys of the values to be fetched, but we can work with a
+        # a map here
+        values_map = {
+            'properties__short_description': lambda detail: detail['data']['properties']['short_description'],
+            # In this case, I'm gonna use a shorthand, since the actual key would be unwieldy
+            'primary_image': get_primary_image
+        }
+        if key not in values_map:
+            raise KeyError
+        path = item['path']
+        response = cache.get(path)
+        if response is None:
+            print "Not cached", path
+            response = requests.get(self.metadata['api_path_prefix'] + path,
+                                    params={'user_key': settings.CRUNCHBASE_USER_KEY})
+            cache.set(path, response)
+        else:
+            print "Cached", path
+        item_details = response.json()
+        # The default behaviour could change to simply return the key that was passed as fetch_value, rather than raising an
+        # exception, but that would make it harder to test
+
+        return values_map.get(key)(item_details)
 
 
 class CrunchbaseEndpoint(object):
