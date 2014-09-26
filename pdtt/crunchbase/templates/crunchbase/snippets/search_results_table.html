@@ -1,7 +1,7 @@
-<table id="{{ subset_name }}-list" class="crunchbase-resultset">
+<table id="{{ subset_name }}-list" class="crunchbase-resultset table table-bordered">
     <caption>
-        <a href="{% url "crunchbase:search" subset_name %}">{{ subset_name|title }}</a>
-        <form id="form-{{ subset_name }}" action="{% url "crunchbase:search" subset_name %}">
+        <a class="h2" href="{% url "crunchbase:search" subset_name %}">{{ subset_name|title }}</a>
+        <form id="form-{{ subset_name }}" action="{% url "crunchbase:search" subset_name %}" class="center-block" style="margin:15px">
             <input type="text" name="query" id="id_query" /><button type="submit">Search</button>
         </form>
     </caption>

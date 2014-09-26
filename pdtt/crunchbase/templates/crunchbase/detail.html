@@ -3,6 +3,8 @@
     {{ object.properties.name }}
 {% endblock %}
 {% block content %}
+<div class="col-8">
+    <small class="pull-right"><a href="{% url "crunchbase:search" %}">return to list</a></small>
     <h1>{{ object.type }}: {{ object.properties.name }}</h1>
     {% with crunchbase_url=object.type|lower|add:"/"|add:object.properties.permalink %}
         <article class="overview">
@@ -34,7 +36,8 @@
         </article>
     {% endif %}
     {% with news=object.relationships.news.items %}
-        <article class="news">
+        {% if news %}
+            <article class="news">
             <h2>News</h2>
             <ul>
                 {% for headline in news|slice:":5" %}
@@ -44,5 +47,7 @@
                 {% endfor %}
             </ul>
         </article>
+        {% endif %}
     {% endwith %}
+</div>
 {% endblock %}
