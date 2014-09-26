@@ -12,7 +12,7 @@
     </tr>
     {% for obj in search_results %}
         <tr class="{{subset_name}}-info">
-            <td>{{ obj.name }}</td>
+            <td><a href="{% url "crunchbase:detail" obj.path %}" class="detail-link">{{ obj.name }}</a></td>
             <td>{{ obj.properties__short_description }}</td>
             <td><img width="200" src="{{ obj.primary_image }}" alt="{{ obj.name }}" /></td>
         </tr>

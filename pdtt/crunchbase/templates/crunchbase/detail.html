@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block page_title %}
+    {{ object.properties.name }}
+{% endblock %}
+{% block content %}
+    <h1>{{ object.type }}: {{ object.properties.name }}</h1>
+    {% with crunchbase_url=object.type|lower|add:"/"|add:object.properties.permalink %}
+        <article class="overview">
+            <h2>Information</h2>
+            <aside>
+                link: <a href="{{ metadata.www_path_prefix }}{{ crunchbase_url }}" class="crunchbase-url">{{ crunchbase_url }}</a>
+            </aside>
+            {{ object.properties.description|default:object.properties.short_description }}
+        </article>
+        {% with imagedata=object.relationships.primary_image.items.0 %}
+            <img class="company-image"
+                 src="{{ metadata.image_path_prefix }}{{ imagedata.path }}"
+                 alt="{{ imagedata.title|default_if_none:object.properties.name }}" />
+        {% endwith %}
+    {% endwith %}
+    {% if object.relationships.current_team.items %}
+        <article class="personnel">
+            <h2>Personnel</h2>
+            <ul>
+                {% for person in object.relationships.current_team.items %}
+                    <li>
+                        {{ person.title }}: {{ person.first_name }} {{ person.last_name }}
+                                          (<a href="{{ metadata.www_path_prefix }}{{ person.path }}">
+                        {{ metadata.www_path_prefix }}{{ person.path }}
+                    </a>)
+                    </li>
+                {% endfor %}
+            </ul>
+        </article>
+    {% endif %}
+    {% with news=object.relationships.news.items %}
+        <article class="news">
+            <h2>News</h2>
+            <ul>
+                {% for headline in news|slice:":5" %}
+                    <li>
+                        {{ headline.author }}: <a href="{{ headline.url }}">{{ headline.title }}</a> ({{ headline.posted_on }})
+                    </li>
+                {% endfor %}
+            </ul>
+        </article>
+    {% endwith %}
+{% endblock %}

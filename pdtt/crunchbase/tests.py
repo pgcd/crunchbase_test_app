@@ -96,6 +96,18 @@ class FrontendAccessTest(WebTest):
         response = response.click("next")
         self.assertItemsEqual(page_2_content, response.context['object_list'])
 
+    def test_detail_page_works_for_companies(self):
+        # The detail page should be accessible from the list index
+        response = self.app.get(urlresolvers.reverse('crunchbase:search', args=('companies',)), status=200)
+        item = response.context['object_list'][0]
+        response = response.click(item['name'])  # The names should be linked
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('object', response.context)
+        # A quick check for the basic properties
+        self.assertIn('properties', response.context['object'])
+        # We also need to have the metadata available for images and crunchbase urls.
+        self.assertIn('metadata', response.context)
+
 
 class ApiQueryTest(TestCase):
     def setUp(self):

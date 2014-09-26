@@ -7,6 +7,7 @@ from django.http import Http404, QueryDict
 from django.utils.encoding import smart_unicode
 from django.utils.text import slugify
 from django.views.generic import ListView
+from django.views.generic.base import TemplateView
 from math import ceil
 import requests
 import urlparse
@@ -335,3 +336,26 @@ class CrunchbaseEndpoint(object):
         response_error = response_json['data'].get('error')
         if response_error:
             raise Http404
+
+
+class CrunchbaseDetailView(TemplateView):
+    # We're not using the default DetailView because at the moment it appears that most of its methods won't be necessary,
+    # this may change later
+    template_name = 'crunchbase/detail.html'
+    object = None
+
+    def get_object(self):
+        path = self.kwargs.get('path')
+        response = requests.get(CrunchbaseEndpoint.BASE_URI + path, params={'user_key': settings.CRUNCHBASE_USER_KEY})
+        return response.json()
+
+    def get_context_data(self, **kwargs):
+        context_data = super(CrunchbaseDetailView, self).get_context_data(**kwargs)
+        context_data['object'] = self.object['data']
+        context_data['metadata'] = self.object['metadata']
+        context_data['personnel'] = [x for x in self.object['data']['relationships']]
+        return context_data
+
+    def get(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        return super(CrunchbaseDetailView, self).get(request, *args, **kwargs)
