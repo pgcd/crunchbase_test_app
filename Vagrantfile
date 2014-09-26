@@ -11,6 +11,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
 
   # Every Vagrant virtual environment requires a box to build off of.
   config.vm.box = "django-base-v2"
+  config.vm.box_url = "https://www.dropbox.com/s/vm1ka9f0vun13uu/django-base-v2.box?dl=1"
   config.vm.hostname = "priori"
 
   # Disable automatic box update checking. If you disable this, then
@@ -127,15 +128,38 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
         echo Provisioning skipped
     else
         echo Provisioning...
-        sudo apt-get -y install vim
+        sudo apt-get update
+        sudo apt-get -y install vim python-pip
+        sudo pip install virtualenvwrapper
         export WORKON_HOME=/home/vagrant/.virtualenvs
         export PIP_DOWNLOAD_CACHE=/home/vagrant/.pip_download_cache
         source /usr/local/bin/virtualenvwrapper.sh
         mkvirtualenv priori
+        echo source /usr/local/bin/virtualenvwrapper.sh > /home/vagrant/.bashrc
         echo workon '"priori"' >> /home/vagrant/.bashrc
         echo alias dj='"python manage.py"' >> /home/vagrant/.bashrc
-        echo cd /vagrant >> /home/vagrant/.bashrc
+        echo cd /vagrant/pdtt >> /home/vagrant/.bashrc
         chown -R vagrant: /home/vagrant/
     fi
 SCRIPT
+
+  # System setup
+  config.vm.provision "shell",
+    inline: $script
+
+$script = <<SCRIPT
+    echo Provisioning part 2...
+    source /usr/local/bin/virtualenvwrapper.sh
+    cd /vagrant
+    workon priori
+    pip install -r requirements.txt
+    cd /vagrant/pdtt
+    python manage.py syncdb --noinput
+    python manage.py test
+    python manage.py runserver 0:9036 &
+SCRIPT
+  # Non-privileged setup
+  config.vm.provision :shell,
+    privileged: false,
+    inline: $script
 end
