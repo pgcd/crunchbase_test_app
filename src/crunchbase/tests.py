@@ -442,7 +442,6 @@ class CBQuerysetTest(TestCase, CBSampleDataMixin):
             if 'page' in kwargs:
                 if kwargs['page'] == 2:
                     return self.page2
-                print "requesting page", kwargs['page']
                 return requests.get(self.dataset_uri, params={'user_key': settings.CRUNCHBASE_USER_KEY, 'page': kwargs['page']})
             return self.page1
         qs = CrunchbaseQueryset(dataset_uri=self.dataset_uri)
@@ -461,7 +460,6 @@ class CBQuerysetTest(TestCase, CBSampleDataMixin):
         item = self.sample_list_data['items'][0]
         results = qs.search(item['name'])
         self.assertGreaterEqual(len(results), 1)
-        print results[0]
         self.assertIn(item['name'], [x['name'] for x in results])
 
     def test_dataset_items_search_detail_for_extra_information(self):

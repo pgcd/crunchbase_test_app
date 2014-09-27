@@ -216,12 +216,9 @@ class CrunchbaseQueryset(collections.Sequence):
         path = item['path']
         response = cache.get(path)
         if response is None:
-            print "Not cached", path
             response = requests.get(self.metadata['api_path_prefix'] + path,
                                     params={'user_key': settings.CRUNCHBASE_USER_KEY})
             cache.set(path, response)
-        else:
-            print "Cached", path
         item_details = response.json()
         # The default behaviour could change to simply return the key that was passed as fetch_value, rather than raising an
         # exception, but that would make it harder to test
